@@ -5,8 +5,8 @@
 import FlutterMacOS
 import Foundation
 
-import url_launcher_macos
+import file_picker
 
 func RegisterGeneratedPlugins(registry: FlutterPluginRegistry) {
-  UrlLauncherPlugin.register(with: registry.registrar(forPlugin: "UrlLauncherPlugin"))
+  FilePickerPlugin.register(with: registry.registrar(forPlugin: "FilePickerPlugin"))
 }

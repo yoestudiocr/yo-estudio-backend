@@ -2,6 +2,7 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from uuid import uuid4
+from sqlalchemy import select
 import os
 
 from database import SessionLocal, engine
@@ -14,6 +15,51 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # Crear tablas
 Base.metadata.create_all(bind=engine)
+
+# ===== Seed inicial de grupos =====
+def seed_grupos():
+    db = SessionLocal()
+    try:
+        existe = db.execute(select(Grupo)).first()
+        if existe:
+            return  # ya hay grupos, no duplicar
+
+        grupos = [
+            Grupo(
+                id="ucr_una_1_3",
+                curso="Admisión UCR–UNA",
+                inicio="2026-02-14",
+                horario="1:00 p.m. – 3:00 p.m.",
+                cupos_max=6,
+                cupos_ocupados=0,
+            ),
+            Grupo(
+                id="ucr_una_tec_10_12",
+                curso="Admisión UCR–UNA–TEC",
+                inicio="2026-02-14",
+                horario="10:00 a.m. – 12:00 m.d.",
+                cupos_max=6,
+                cupos_ocupados=0,
+            ),
+            Grupo(
+                id="ucr_una_tec_3_5",
+                curso="Admisión UCR–UNA–TEC",
+                inicio="2026-02-14",
+                horario="3:00 p.m. – 5:00 p.m.",
+                cupos_max=6,
+                cupos_ocupados=0,
+            ),
+        ]
+
+        db.add_all(grupos)
+        db.commit()
+        print("✅ Grupos iniciales creados")
+
+    finally:
+        db.close()
+
+
+seed_grupos()
 
 # Dependency DB
 def get_db():
