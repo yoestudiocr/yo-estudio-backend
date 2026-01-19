@@ -1,89 +1,55 @@
-#!/usr/bin/env python3
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends
 from fastapi.responses import FileResponse
-from fastapi.middleware.cors import CORSMiddleware
-from datetime import date, timedelta
-from typing import List, Dict
-import uuid
+from sqlalchemy.orm import Session
+from uuid import uuid4
 import os
 
-# =========================
-# App
-# =========================
+from database import SessionLocal, engine
+from models import Base, Grupo, Matricula
+
 app = FastAPI(title="Yo Estudio App")
 
-# =========================
-# CORS (NECESARIO PARA FLUTTER WEB)
-# =========================
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # luego se puede restringir
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# =========================
-# Configuración básica
-# =========================
 UPLOAD_DIR = "comprobantes"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# =========================
-# Helpers
-# =========================
-def generar_4_sabados(fecha_inicio: str) -> List[str]:
-    y, m, d = map(int, fecha_inicio.split("-"))
-    inicio = date(y, m, d)
-    return [(inicio + timedelta(days=7 * i)).isoformat() for i in range(4)]
+# Crear tablas
+Base.metadata.create_all(bind=engine)
 
-# =========================
-# Datos en memoria (MVP)
-# =========================
-GRUPOS: List[Dict] = [
-    {
-        "id": "ucr_una_1_3",
-        "curso": "Admisión UCR–UNA",
-        "inicio": "2026-02-14",
-        "horario": "1:00 p.m. – 3:00 p.m.",
-        "cupos_max": 6,
-        "cupos_ocupados": 0,
-    },
-    {
-        "id": "ucr_una_tec_10_12",
-        "curso": "Admisión UCR–UNA–TEC",
-        "inicio": "2026-02-14",
-        "horario": "10:00 a.m. – 12:00 m.d.",
-        "cupos_max": 6,
-        "cupos_ocupados": 0,
-    },
-    {
-        "id": "ucr_una_tec_3_5",
-        "curso": "Admisión UCR–UNA–TEC",
-        "inicio": "2026-02-14",
-        "horario": "3:00 p.m. – 5:00 p.m.",
-        "cupos_max": 6,
-        "cupos_ocupados": 0,
-    },
-]
+# Dependency DB
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
-MATRICULAS: Dict[str, Dict] = {}
 
-# =========================
-# Endpoints públicos
-# =========================
+# ================= HOME =================
+
 @app.get("/")
 def home():
     return {"ok": True, "app": "Yo Estudio"}
 
+
+# ================= GRUPOS =================
+
 @app.get("/grupos")
-def listar_grupos():
+def listar_grupos(db: Session = Depends(get_db)):
+    grupos = db.query(Grupo).all()
     return [
         {
-            **g,
-            "cupos_disponibles": g["cupos_max"] - g["cupos_ocupados"],
+            "id": g.id,
+            "curso": g.curso,
+            "inicio": g.inicio,
+            "horario": g.horario,
+            "cupos_max": g.cupos_max,
+            "cupos_ocupados": g.cupos_ocupados
         }
-        for g in GRUPOS
+        for g in grupos
     ]
+
+
+# ================= MATRÍCULA =================
 
 @app.post("/matricula")
 async def solicitar_matricula(
@@ -92,107 +58,113 @@ async def solicitar_matricula(
     telefono: str = Form(...),
     grupo_id: str = Form(...),
     comprobante: UploadFile = File(...),
+    db: Session = Depends(get_db)
 ):
-    grupo = next((g for g in GRUPOS if g["id"] == grupo_id), None)
+    grupo = db.query(Grupo).filter(Grupo.id == grupo_id).first()
     if not grupo:
         raise HTTPException(status_code=404, detail="Grupo no encontrado")
 
-    if grupo["cupos_ocupados"] >= grupo["cupos_max"]:
+    if grupo.cupos_ocupados >= grupo.cupos_max:
         raise HTTPException(status_code=409, detail="Cupo lleno")
 
     ext = os.path.splitext(comprobante.filename)[1]
-    nombre_archivo = f"{uuid.uuid4()}{ext}"
-    ruta = os.path.join(UPLOAD_DIR, nombre_archivo)
+    filename = f"{uuid4()}{ext}"
+    ruta = os.path.join(UPLOAD_DIR, filename)
 
     with open(ruta, "wb") as f:
         f.write(await comprobante.read())
 
-    grupo["cupos_ocupados"] += 1
+    grupo.cupos_ocupados += 1
 
-    matricula_id = str(uuid.uuid4())
-    codigo = f"YE-{uuid.uuid4().hex[:6].upper()}"
+    matricula = Matricula(
+        id=str(uuid4()),
+        codigo=f"YE-{uuid4().hex[:6].upper()}",
+        estudiante=estudiante,
+        encargado=encargado,
+        telefono=telefono,
+        grupo_id=grupo_id,
+        estado="pendiente",
+        comprobante=ruta
+    )
 
-    MATRICULAS[matricula_id] = {
-        "id": matricula_id,
-        "codigo": codigo,
-        "estudiante": estudiante,
-        "encargado": encargado,
-        "telefono": telefono,
-        "grupo_id": grupo_id,
-        "estado": "pendiente",
-        "comprobante": ruta,
-    }
+    db.add(matricula)
+    db.commit()
+    db.refresh(matricula)
 
     return {
-        "codigo": codigo,
-        "estado": "pendiente",
+        "codigo": matricula.codigo,
+        "estado": matricula.estado
     }
+
+
+# ================= CONSULTAR =================
 
 @app.get("/matricula/consultar/{codigo}")
-def consultar_matricula(codigo: str):
-    matricula = next(
-        (m for m in MATRICULAS.values() if m["codigo"] == codigo),
-        None,
-    )
-
-    if not matricula:
+def consultar_matricula(codigo: str, db: Session = Depends(get_db)):
+    m = db.query(Matricula).filter(Matricula.codigo == codigo).first()
+    if not m:
         raise HTTPException(status_code=404, detail="Código no encontrado")
 
-    grupo = next(g for g in GRUPOS if g["id"] == matricula["grupo_id"])
+    grupo = db.query(Grupo).filter(Grupo.id == m.grupo_id).first()
 
     return {
-        "codigo": matricula["codigo"],
-        "estudiante": matricula["estudiante"],
-        "encargado": matricula["encargado"],
-        "telefono": matricula["telefono"],
-        "curso": grupo["curso"],
-        "horario": grupo["horario"],
-        "estado": matricula["estado"],
+        "codigo": m.codigo,
+        "estudiante": m.estudiante,
+        "encargado": m.encargado,
+        "telefono": m.telefono,
+        "curso": grupo.curso,
+        "horario": grupo.horario,
+        "estado": m.estado
     }
 
-# =========================
-# Admin
-# =========================
+
+# ================= ADMIN =================
+
 @app.get("/admin/matriculas")
-def ver_matriculas():
-    return MATRICULAS
+def admin_matriculas(db: Session = Depends(get_db)):
+    return {
+        m.id: {
+            "id": m.id,
+            "codigo": m.codigo,
+            "estudiante": m.estudiante,
+            "encargado": m.encargado,
+            "telefono": m.telefono,
+            "grupo_id": m.grupo_id,
+            "estado": m.estado
+        }
+        for m in db.query(Matricula).all()
+    }
+
 
 @app.post("/admin/aprobar/{matricula_id}")
-def aprobar_matricula(matricula_id: str):
-    matricula = MATRICULAS.get(matricula_id)
-    if not matricula:
-        raise HTTPException(status_code=404, detail="Matrícula no encontrada")
+def aprobar_matricula(matricula_id: str, db: Session = Depends(get_db)):
+    m = db.query(Matricula).filter(Matricula.id == matricula_id).first()
+    if not m:
+        raise HTTPException(status_code=404, detail="No encontrada")
 
-    matricula["estado"] = "aprobada"
+    m.estado = "aprobada"
+    db.commit()
     return {"ok": True}
+
 
 @app.post("/admin/rechazar/{matricula_id}")
-def rechazar_matricula(matricula_id: str):
-    matricula = MATRICULAS.get(matricula_id)
-    if not matricula:
-        raise HTTPException(status_code=404, detail="Matrícula no encontrada")
+def rechazar_matricula(matricula_id: str, db: Session = Depends(get_db)):
+    m = db.query(Matricula).filter(Matricula.id == matricula_id).first()
+    if not m:
+        raise HTTPException(status_code=404, detail="No encontrada")
 
-    grupo = next(g for g in GRUPOS if g["id"] == matricula["grupo_id"])
-    grupo["cupos_ocupados"] = max(0, grupo["cupos_ocupados"] - 1)
+    grupo = db.query(Grupo).filter(Grupo.id == m.grupo_id).first()
+    grupo.cupos_ocupados = max(0, grupo.cupos_ocupados - 1)
 
-    matricula["estado"] = "rechazada"
+    m.estado = "rechazada"
+    db.commit()
     return {"ok": True}
 
+
 @app.get("/admin/comprobante/{matricula_id}")
-def ver_comprobante(matricula_id: str):
-    matricula = MATRICULAS.get(matricula_id)
-    if not matricula:
-        raise HTTPException(status_code=404, detail="Matrícula no encontrada")
+def ver_comprobante(matricula_id: str, db: Session = Depends(get_db)):
+    m = db.query(Matricula).filter(Matricula.id == matricula_id).first()
+    if not m or not os.path.exists(m.comprobante):
+        raise HTTPException(status_code=404, detail="No encontrado")
 
-    ruta = matricula["comprobante"]
-    if not os.path.exists(ruta):
-        raise HTTPException(
-            status_code=404,
-            detail="Comprobante no encontrado",
-        )
-
-    return FileResponse(
-        path=ruta,
-        filename=os.path.basename(ruta),
-        media_type="application/octet-stream",
-    )
+    return FileResponse(m.comprobante)

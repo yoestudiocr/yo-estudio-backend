@@ -5,6 +5,9 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+const API = 'https://yo-estudio-backend.onrender.com';
+const adminPin = '289710';
+
 void main() {
   runApp(const YoEstudioApp());
 }
@@ -21,8 +24,14 @@ class YoEstudioApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
-        colorScheme:
-            ColorScheme.fromSeed(seedColor: const Color(0xFF1E3A8A)),
+        scaffoldBackgroundColor: const Color(0xFFF5F8FF),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF1E3A8A),
+        ),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xFF1E3A8A),
+          foregroundColor: Colors.white,
+        ),
       ),
       home: const CursosPage(),
     );
@@ -50,16 +59,11 @@ class _CursosPageState extends State<CursosPage> {
 
   Future<void> cargarCursos() async {
     setState(() => cargando = true);
-
-    final res =
-        await http.get(Uri.parse('http://127.0.0.1:8000/grupos'));
-
+    final res = await http.get(Uri.parse('$API/grupos'));
     if (res.statusCode == 200) {
-      setState(() {
-        cursos = json.decode(res.body);
-        cargando = false;
-      });
+      cursos = json.decode(res.body);
     }
+    setState(() => cargando = false);
   }
 
   @override
@@ -69,15 +73,12 @@ class _CursosPageState extends State<CursosPage> {
         title: const Text('Cursos disponibles'),
         actions: [
           TextButton(
-            onPressed: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const ConsultarMatriculaPage(),
-                ),
-              );
-              cargarCursos();
-            },
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const ConsultarMatriculaPage(),
+              ),
+            ),
             child: const Text(
               'Consultar matrícula',
               style: TextStyle(color: Colors.white),
@@ -85,15 +86,10 @@ class _CursosPageState extends State<CursosPage> {
           ),
           IconButton(
             icon: const Icon(Icons.admin_panel_settings),
-            onPressed: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const AdminPinPage(),
-                ),
-              );
-              cargarCursos(); // 🔁 refresca cupos
-            },
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AdminPinPage()),
+            ),
           ),
         ],
       ),
@@ -103,44 +99,57 @@ class _CursosPageState extends State<CursosPage> {
               itemCount: cursos.length,
               itemBuilder: (_, i) {
                 final c = cursos[i];
-                final cupos =
-                    c['cupos_max'] - c['cupos_ocupados'];
-                final hayCupo = cupos > 0;
+                final cupos = c['cupos_disponibles'];
 
                 return Card(
                   margin: const EdgeInsets.all(12),
-                  child: ListTile(
-                    title: Text(c['curso']),
-                    subtitle:
-                        Text('${c['horario']} • Inicio ${c['inicio']}'),
-                    trailing: Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          hayCupo
-                              ? 'Cupos: $cupos'
-                              : 'Cupo lleno',
-                          style: TextStyle(
-                            color:
-                                hayCupo ? Colors.green : Colors.red,
+                          c['curso'],
+                          style: const TextStyle(
+                            fontSize: 18,
                             fontWeight: FontWeight.bold,
+                            color: Color(0xFF1E3A8A),
                           ),
                         ),
-                        ElevatedButton(
-                          onPressed: hayCupo
-                              ? () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => MatriculaPage(
-                                        curso: c['curso'],
-                                        grupoId: c['id'],
+                        const SizedBox(height: 6),
+                        Text(c['horario']),
+                        const SizedBox(height: 6),
+                        Text(
+                          cupos > 0
+                              ? 'Cupos disponibles: $cupos'
+                              : 'Cupo lleno',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: cupos > 0
+                                ? Colors.green
+                                : Colors.red,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: ElevatedButton(
+                            onPressed: cupos > 0
+                                ? () => Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => MatriculaPage(
+                                          curso: c['curso'],
+                                          grupoId: c['id'],
+                                        ),
                                       ),
-                                    ),
-                                  );
-                                }
-                              : null,
-                          child: const Text('Matricularme'),
+                                    )
+                                : null,
+                            child: const Text('Matricularme'),
+                          ),
                         ),
                       ],
                     ),
@@ -165,31 +174,22 @@ class ConsultarMatriculaPage extends StatefulWidget {
 class _ConsultarMatriculaPageState
     extends State<ConsultarMatriculaPage> {
   final codigoCtrl = TextEditingController();
-  Map<String, dynamic>? resultado;
+  Map<String, dynamic>? data;
   String? error;
 
   Future<void> consultar() async {
-    setState(() {
-      resultado = null;
-      error = null;
-    });
-
+    error = null;
+    data = null;
+    setState(() {});
     final codigo = codigoCtrl.text.trim().toUpperCase();
-
-    final res = await http.get(
-      Uri.parse(
-          'http://127.0.0.1:8000/matricula/consultar/$codigo'),
-    );
-
+    final res =
+        await http.get(Uri.parse('$API/matricula/consultar/$codigo'));
     if (res.statusCode == 200) {
-      setState(() {
-        resultado = json.decode(res.body);
-      });
+      data = json.decode(res.body);
     } else {
-      setState(() {
-        error = 'Código no encontrado';
-      });
+      error = 'Código no encontrado';
     }
+    setState(() {});
   }
 
   @override
@@ -203,7 +203,7 @@ class _ConsultarMatriculaPageState
             TextField(
               controller: codigoCtrl,
               decoration: const InputDecoration(
-                labelText: 'Código',
+                labelText: 'Código de matrícula',
                 border: OutlineInputBorder(),
               ),
             ),
@@ -213,22 +213,26 @@ class _ConsultarMatriculaPageState
               child: const Text('Consultar'),
             ),
             if (error != null)
-              Text(error!, style: const TextStyle(color: Colors.red)),
-            if (resultado != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 16),
+                child: Text(error!,
+                    style: const TextStyle(color: Colors.red)),
+              ),
+            if (data != null)
               Card(
                 margin: const EdgeInsets.only(top: 20),
                 child: ListTile(
-                  title: Text(resultado!['estudiante']),
-                  subtitle: Text(resultado!['curso']),
+                  title: Text(data!['estudiante']),
+                  subtitle: Text(data!['curso']),
                   trailing: Text(
-                    resultado!['estado'],
+                    data!['estado'],
                     style: TextStyle(
-                      color: resultado!['estado'] == 'aprobada'
+                      fontWeight: FontWeight.bold,
+                      color: data!['estado'] == 'aprobada'
                           ? Colors.green
-                          : resultado!['estado'] == 'rechazada'
+                          : data!['estado'] == 'rechazada'
                               ? Colors.red
                               : Colors.orange,
-                      fontWeight: FontWeight.bold,
                     ),
                   ),
                 ),
@@ -264,7 +268,7 @@ class _MatriculaPageState extends State<MatriculaPage> {
 
     final req = http.MultipartRequest(
       'POST',
-      Uri.parse('http://127.0.0.1:8000/matricula'),
+      Uri.parse('$API/matricula'),
     );
 
     req.fields.addAll({
@@ -288,8 +292,22 @@ class _MatriculaPageState extends State<MatriculaPage> {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Matrícula recibida'),
-        content: SelectableText(data['codigo']),
+        title: const Text('Matrícula enviada 💙'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Guarde este código:'),
+            const SizedBox(height: 8),
+            SelectableText(
+              data['codigo'],
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF1E3A8A),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -302,7 +320,9 @@ class _MatriculaPageState extends State<MatriculaPage> {
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
-            Text(widget.curso),
+            Text(widget.curso,
+                style: const TextStyle(
+                    fontWeight: FontWeight.bold)),
             TextField(
                 controller: estudianteCtrl,
                 decoration:
@@ -315,6 +335,7 @@ class _MatriculaPageState extends State<MatriculaPage> {
                 controller: telefonoCtrl,
                 decoration:
                     const InputDecoration(labelText: 'Teléfono')),
+            const SizedBox(height: 12),
             ElevatedButton(
               onPressed: () async {
                 final r =
@@ -328,6 +349,7 @@ class _MatriculaPageState extends State<MatriculaPage> {
               },
               child: const Text('Adjuntar comprobante'),
             ),
+            const SizedBox(height: 16),
             ElevatedButton(
               onPressed: enviar,
               child: const Text('Enviar matrícula'),
@@ -341,17 +363,34 @@ class _MatriculaPageState extends State<MatriculaPage> {
 
 /* ================= ADMIN PIN ================= */
 
-class AdminPinPage extends StatelessWidget {
+class AdminPinPage extends StatefulWidget {
   const AdminPinPage({super.key});
 
-  static const pin = '289710';
+  @override
+  State<AdminPinPage> createState() => _AdminPinPageState();
+}
+
+class _AdminPinPageState extends State<AdminPinPage> {
+  final ctrl = TextEditingController();
+  String? error;
+
+  void validar() {
+    if (ctrl.text == adminPin) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const AdminMatriculasPage(),
+        ),
+      );
+    } else {
+      setState(() => error = 'PIN incorrecto');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final ctrl = TextEditingController();
-
     return Scaffold(
-      appBar: AppBar(title: const Text('Admin PIN')),
+      appBar: AppBar(title: const Text('Acceso administrador')),
       body: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -362,20 +401,14 @@ class AdminPinPage extends StatelessWidget {
               decoration:
                   const InputDecoration(labelText: 'PIN'),
             ),
+            const SizedBox(height: 12),
             ElevatedButton(
-              onPressed: () {
-                if (ctrl.text == pin) {
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          const AdminMatriculasPage(),
-                    ),
-                  );
-                }
-              },
+              onPressed: validar,
               child: const Text('Entrar'),
             ),
+            if (error != null)
+              Text(error!,
+                  style: const TextStyle(color: Colors.red)),
           ],
         ),
       ),
@@ -404,26 +437,15 @@ class _AdminMatriculasPageState
   }
 
   Future<void> cargar() async {
-    final res = await http.get(
-      Uri.parse('http://127.0.0.1:8000/admin/matriculas'),
-    );
-    setState(() {
-      matriculas = json.decode(res.body);
-    });
+    final res =
+        await http.get(Uri.parse('$API/admin/matriculas'));
+    matriculas = json.decode(res.body);
+    setState(() {});
   }
 
-  Future<void> aprobar(String id) async {
-    await http.post(
-      Uri.parse('http://127.0.0.1:8000/admin/aprobar/$id'),
-    );
-    cargar(); // 🔁 refresca estado
-  }
-
-  Future<void> rechazar(String id) async {
-    await http.post(
-      Uri.parse('http://127.0.0.1:8000/admin/rechazar/$id'),
-    );
-    cargar(); // 🔁 refresca estado y cupos
+  Future<void> abrirComprobante(String id) async {
+    final url = Uri.parse('$API/admin/comprobante/$id');
+    await launchUrl(url, mode: LaunchMode.externalApplication);
   }
 
   @override
@@ -437,7 +459,7 @@ class _AdminMatriculasPageState
 
           return Card(
             child: Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(14),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -448,22 +470,27 @@ class _AdminMatriculasPageState
                   Row(
                     children: [
                       ElevatedButton(
-                        onPressed: () => aprobar(m['id']),
+                        onPressed: () async {
+                          await http.post(Uri.parse(
+                              '$API/admin/aprobar/${m['id']}'));
+                          cargar();
+                        },
                         child: const Text('Aprobar'),
                       ),
                       const SizedBox(width: 8),
                       ElevatedButton(
-                        onPressed: () => rechazar(m['id']),
+                        onPressed: () async {
+                          await http.post(Uri.parse(
+                              '$API/admin/rechazar/${m['id']}'));
+                          cargar();
+                        },
                         child: const Text('Rechazar'),
                       ),
                       IconButton(
                         icon:
                             const Icon(Icons.attach_file),
-                        onPressed: () async {
-                          final url =
-                              'http://127.0.0.1:8000/admin/comprobante/${m['id']}';
-                          await launchUrl(Uri.parse(url));
-                        },
+                        onPressed: () =>
+                            abrirComprobante(m['id']),
                       ),
                     ],
                   ),

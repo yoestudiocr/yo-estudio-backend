@@ -1,0 +1,26 @@
+{
+  "grupos": [
+    {
+      "id": "ucr_una_1_3",
+      "curso": "Admisión UCR–UNA",
+      "horario": "1:00 p.m. – 3:00 p.m.",
+      "cupos_max": 6,
+      "cupos_ocupados": 0
+    },
+    {
+      "id": "ucr_una_tec_10_12",
+      "curso": "Admisión UCR–UNA–TEC",
+      "horario": "10:00 a.m. – 12:00 m.d.",
+      "cupos_max": 6,
+      "cupos_ocupados": 0
+    },
+    {
+      "id": "ucr_una_tec_3_5",
+      "curso": "Admisión UCR–UNA–TEC",
+      "horario": "3:00 p.m. – 5:00 p.m.",
+      "cupos_max": 6,
+      "cupos_ocupados": 0
+    }
+  ],
+  "matriculas": {}
+}
