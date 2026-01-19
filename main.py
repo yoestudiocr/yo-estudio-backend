@@ -10,6 +10,22 @@ from models import Base, Grupo, Matricula
 
 app = FastAPI(title="Yo Estudio App")
 
+
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://yo-estudio-cr.web.app",
+        "http://localhost:5000",
+        "http://localhost:8000",
+        "http://localhost:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 UPLOAD_DIR = "comprobantes"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
